@@ -39,16 +39,14 @@ public class StopPoseLoopingMotionEditor : Editor
     {
         serializedObject.Update();
 
-        // 1. 기본 변수들 그리기
+        // 기본 변수들 그리기
         EditorGUILayout.PropertyField(motionIntProp);
         EditorGUILayout.PropertyField(motionTypeParamProp);
         EditorGUILayout.PropertyField(motionSpeedParamProp);
         EditorGUILayout.PropertyField(addictiveLayerParamProp);
         EditorGUILayout.PropertyField(maxWeightParamProp);
 
-        // ---------------------------------------------------------
-        // 여기서부터 미리보기 기능 UI
-        // ---------------------------------------------------------
+        //미리보기 기능 UI
         EditorGUILayout.Space(20);
         EditorGUILayout.LabelField("Pose Preview (Editor Only)", EditorStyles.boldLabel);
 
@@ -84,13 +82,13 @@ public class StopPoseLoopingMotionEditor : Editor
                 // [핵심] 값이 조금이라도 변했다면?
                 if (EditorGUI.EndChangeCheck())
                 {
-                    // 1. 데이터 저장
+                    // 데이터 저장
                     serializedObject.ApplyModifiedProperties();
                     
-                    // 2. 포즈 즉시 적용
+                    // 포즈 즉시 적용
                     SamplePose();
                     
-                    // 3. [중요] 씬 뷰 강제 갱신 (이게 없으면 드래그 중에 안 움직임)
+                    // 씬 뷰 강제 갱신 (이게 없으면 드래그 중에 안 움직임)
                     SceneView.RepaintAll();
                 }
             }

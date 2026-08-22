@@ -5,7 +5,7 @@ using UnityEngine.Rendering.Universal;
 
 public class OverlayEffectRenderFeature : ScriptableRendererFeature
 {
-    // [수정 1] 불투명, 투명, 그리고 '둘 다(All)'를 지원하기 위한 커스텀 Enum 정의
+    // 불투명, 투명, 그리고 '둘 다(All)'를 지원하기 위한 커스텀 Enum 정의
     public enum TargetQueueType
     {
         Opaque,      // 불투명만
@@ -24,7 +24,7 @@ public class OverlayEffectRenderFeature : ScriptableRendererFeature
         [Range(0, 255)]
         public int stencilReference = 2;
 
-        // [수정 2] 기존 RenderQueueType 대신 새로 만든 커스텀 Enum 사용 (기본값 All)
+        //기존 RenderQueueType 대신 새로 만든 커스텀 Enum 사용 (기본값 All)
         public TargetQueueType renderQueueType = TargetQueueType.All; 
     }
 
@@ -52,7 +52,7 @@ public class OverlayEffectRenderFeature : ScriptableRendererFeature
                 new ShaderTagId("LightweightForward")
             };
             
-            // [수정 3] 선택한 옵션에 따라 렌더링 범위(Range)를 결정하는 로직
+            //선택한 옵션에 따라 렌더링 범위(Range)를 결정하는 로직
             RenderQueueRange queueRange = RenderQueueRange.all; // 기본값: 전체
 
             switch (settings.renderQueueType)
@@ -93,15 +93,11 @@ public class OverlayEffectRenderFeature : ScriptableRendererFeature
                 drawingSettings.enableDynamicBatching = true;
                 drawingSettings.enableInstancing = true;
 
-                // ====================================================
-                // [1단계] 몸통 그리기 (Pass 0)
-                // ====================================================
+                // 몸통 그리기 (Pass 0)
                 drawingSettings.overrideMaterialPassIndex = 0; 
                 context.DrawRenderers(renderingData.cullResults, ref drawingSettings, ref filteringSettings);
 
-                // ====================================================
-                // [2단계] 아웃라인 그리기 (Pass 1)
-                // ====================================================
+                // 아웃라인 그리기 (Pass 1)
                  drawingSettings.overrideMaterialPassIndex = 1; 
                  context.DrawRenderers(renderingData.cullResults, ref drawingSettings, ref filteringSettings);
 

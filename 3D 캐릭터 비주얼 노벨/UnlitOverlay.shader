@@ -21,9 +21,7 @@ Shader "Custom/UnlitOverlay"
             "RenderPipeline" = "UniversalPipeline"
         }
 
-        // =======================================================
         // Pass 1: 몸통 
-        // =======================================================
         Pass
         {
             Name "OverlayBody"
@@ -99,9 +97,7 @@ Shader "Custom/UnlitOverlay"
             ENDHLSL
         }
 
-        // =======================================================
-        // Pass 2: 외곽선 (추가된 부분)
-        // =======================================================
+        //  Pass 2: 외곽선 (추가된 부분)
         Pass
         {
             Name "OverlayOutline"
@@ -166,7 +162,7 @@ Shader "Custom/UnlitOverlay"
                 UNITY_TRANSFER_INSTANCE_ID(input, output);
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
 
-                // [확장 로직] 노멀 방향으로 버텍스를 밀어냄
+                // 노멀 방향으로 버텍스를 밀어냄
                 float3 extrudedPos = input.positionOS.xyz + (input.normalOS * _OutlineWidth);
 
                 VertexPositionInputs vertexInput = GetVertexPositionInputs(extrudedPos);
