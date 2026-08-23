@@ -8,42 +8,56 @@ public class OverlayEffectRenderFeature : ScriptableRendererFeature
     // 불투명, 투명, 그리고 '둘 다(All)'를 지원하기 위한 커스텀 Enum 정의
     public enum TargetQueueType
     {
-        Opaque,      // 불투명만
+        Opaque, // 불투명만
         Transparent, // 투명만
-        All          // 둘 다 포함
+        All // 둘 다 포함
+    }
+
+    [System.Serializable]
+    public class StencilMapping
+    {
+        [Range(0, 255)] public int stencilId; // 타겟 스텐실 번호
+        public Color outlineColor; // 덮어씌울 색상
+        [HideInInspector]public Material material;
     }
 
     [System.Serializable]
     public class OverlaySettings
     {
-        public Material overlayMaterial;
         public LayerMask layerMask;
-        public RenderPassEvent renderEvent = RenderPassEvent.AfterRenderingTransparents;
-        
-        [Tooltip("오버레이를 적용할 스텐실 ID입니다. (캐릭터 머테리얼 설정과 같아야 함)")]
-        [Range(0, 255)]
-        public int stencilReference = 2;
 
-        //기존 RenderQueueType 대신 새로 만든 커스텀 Enum 사용 (기본값 All)
-        public TargetQueueType renderQueueType = TargetQueueType.All; 
+        public RenderPassEvent renderEvent = RenderPassEvent.AfterRenderingTransparents;
+
+        // 기존 RenderQueueType 대신 새로 만든 커스텀 Enum 사용 (기본값 All)
+        public TargetQueueType renderQueueType = TargetQueueType.All;
+
+        [Tooltip("아웃라인 전용")] 
+        public Shader stencilOutlineShader;
+        public List<StencilMapping> stencilColorMappings;
+    }
+    
+    [System.Serializable]
+    public class NoOverlaySettings
+    {
+        public LayerMask layerMask;
+        public Material eraserMaterial;
     }
 
-    class OverlayPass : ScriptableRenderPass
+    class NoOverlayPass : ScriptableRenderPass
     {
-        private Material overlayMaterial;
+        private Material eraserMaterial;
         private FilteringSettings filteringSettings;
         private List<ShaderTagId> shaderTagIdList;
         private ProfilingSampler profilingSampler;
-        private int stencilRef;
 
-        public OverlayPass(OverlaySettings settings)
+        public NoOverlayPass(NoOverlaySettings settings)
         {
-            this.overlayMaterial = settings.overlayMaterial;
-            this.renderPassEvent = settings.renderEvent;
-            this.stencilRef = settings.stencilReference;
+            this.eraserMaterial = settings.eraserMaterial;
+            this.profilingSampler = new ProfilingSampler("Stencil Eraser Pass");
+            RenderQueueRange queueRange = RenderQueueRange.all;
+            this.filteringSettings = new FilteringSettings(queueRange, settings.layerMask);
+            this.renderPassEvent = RenderPassEvent.AfterRenderingTransparents;
             
-            this.profilingSampler = new ProfilingSampler("Overlay Effect Stencil Pass");
-
             shaderTagIdList = new List<ShaderTagId>
             {
                 new ShaderTagId("SRPDefaultUnlit"),
@@ -51,9 +65,50 @@ public class OverlayEffectRenderFeature : ScriptableRendererFeature
                 new ShaderTagId("UniversalForwardOnly"),
                 new ShaderTagId("LightweightForward")
             };
-            
-            //선택한 옵션에 따라 렌더링 범위(Range)를 결정하는 로직
-            RenderQueueRange queueRange = RenderQueueRange.all; // 기본값: 전체
+        }
+        public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
+        {
+            if (eraserMaterial == null) return;
+
+            CommandBuffer cmd = CommandBufferPool.Get();
+            using (new ProfilingScope(cmd, profilingSampler))
+            {
+                SortingCriteria sortingCriteria = SortingCriteria.CommonTransparent;
+                DrawingSettings drawingSettings =
+                    CreateDrawingSettings(shaderTagIdList, ref renderingData, sortingCriteria);
+                drawingSettings.overrideMaterial = eraserMaterial;
+                drawingSettings.overrideMaterialPassIndex = 0;
+                context.DrawRenderers(renderingData.cullResults, ref drawingSettings, ref filteringSettings);
+            }
+
+            context.ExecuteCommandBuffer(cmd);
+            cmd.Clear();
+            CommandBufferPool.Release(cmd);
+        }
+    }
+    
+    class OverlayPass : ScriptableRenderPass
+    {
+        private FilteringSettings filteringSettings;
+        private List<ShaderTagId> shaderTagIdList;
+        private ProfilingSampler profilingSampler;
+
+        private List<StencilMapping> stencilColorMappings;
+
+        public OverlayPass(OverlaySettings settings)
+        {
+
+            this.renderPassEvent = settings.renderEvent;
+            this.profilingSampler = new ProfilingSampler("Overlay Effect Stencil Pass");
+            shaderTagIdList = new List<ShaderTagId>
+            {
+                new ShaderTagId("SRPDefaultUnlit"),
+                new ShaderTagId("UniversalForward"),
+                new ShaderTagId("UniversalForwardOnly"),
+                new ShaderTagId("LightweightForward")
+            };
+
+            RenderQueueRange queueRange = RenderQueueRange.all;
 
             switch (settings.renderQueueType)
             {
@@ -70,11 +125,20 @@ public class OverlayEffectRenderFeature : ScriptableRendererFeature
 
             // 결정된 큐 범위와 레이어 마스크로 필터링 설정 생성
             filteringSettings = new FilteringSettings(queueRange, settings.layerMask);
+            stencilColorMappings = settings.stencilColorMappings;
+            foreach (var mapping in stencilColorMappings)
+            {
+                if(mapping.material==null)
+                    mapping.material=new Material(settings.stencilOutlineShader);    
+                    
+                mapping.material.SetFloat("_StencilRef", mapping.stencilId);
+                mapping.material.SetColor("_Color", mapping.outlineColor);
+            }
         }
 
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
         {
-            if (overlayMaterial == null) return;
+            if (stencilColorMappings == null||stencilColorMappings.Count==0) return;
 
             CommandBuffer cmd = CommandBufferPool.Get();
             using (new ProfilingScope(cmd, profilingSampler))
@@ -83,44 +147,92 @@ public class OverlayEffectRenderFeature : ScriptableRendererFeature
                 cmd.Clear();
 
                 SortingCriteria sortingCriteria = renderingData.cameraData.defaultOpaqueSortFlags;
-                DrawingSettings drawingSettings = CreateDrawingSettings(shaderTagIdList, ref renderingData, sortingCriteria);
-                
-                // 스텐실 값 주입
-                overlayMaterial.SetInt("_StencilRef", stencilRef);
+                DrawingSettings drawingSettings =
+                    CreateDrawingSettings(shaderTagIdList, ref renderingData, sortingCriteria);
 
-                // 공통 설정
-                drawingSettings.overrideMaterial = overlayMaterial;
+
                 drawingSettings.enableDynamicBatching = true;
                 drawingSettings.enableInstancing = true;
 
-                // 몸통 그리기 (Pass 0)
-                drawingSettings.overrideMaterialPassIndex = 0; 
-                context.DrawRenderers(renderingData.cullResults, ref drawingSettings, ref filteringSettings);
+                // // [stencil로 다시 그리는 overlay] 몸통 그리기
+                foreach (var mapping in stencilColorMappings)
+                {
+                    if(mapping.material==null)
+                        continue;
+                    //2026-01-26 KHJ : 각 스탠실 번호마다 머테리얼 배정, 색 지정 
+                    mapping.material.SetColor("_Color", mapping.outlineColor);
+                    cmd.DrawMesh(RenderingUtils.fullscreenMesh, Matrix4x4.identity, mapping.material);
+                }
 
-                // 아웃라인 그리기 (Pass 1)
-                 drawingSettings.overrideMaterialPassIndex = 1; 
-                 context.DrawRenderers(renderingData.cullResults, ref drawingSettings, ref filteringSettings);
+                // // [override material을 통한 overlay] 몸통 그리던 버전
+                // drawingSettings.overrideMaterialPassIndex = 0; 
+                // context.DrawRenderers(renderingData.cullResults, ref drawingSettings, ref filteringSettings);
 
+                
+                // foreach (var setting in stencilColorMappings)
+                // {
+                //     MaterialPropertyBlock props = new MaterialPropertyBlock();
+                //     cmd.SetGlobalFloat("_StencilRef", setting.stencilId);
+                //     props.SetColor("_Color", setting.outlineColor);
+                //     
+                //     outlineMaterial.SetColor("_Color", setting.outlineColor);
+                //     outlineMaterial.SetFloat("_Stencil", setting.stencilId);
+                //     cmd.DrawMesh(RenderingUtils.fullscreenMesh, Matrix4x4.identity, outlineMaterial,0,0,props);
+                // }
             }
+
             context.ExecuteCommandBuffer(cmd);
             CommandBufferPool.Release(cmd);
         }
+
+        public override void Configure(CommandBuffer cmd, RenderTextureDescriptor cameraTextureDescriptor)
+        {
+            // Color: 화면 색상 버퍼 / Depth: 스텐실 버퍼
+            ConfigureInput(ScriptableRenderPassInput.Color | ScriptableRenderPassInput.Depth);
+        }
+
+        public override void OnCameraSetup(CommandBuffer cmd, ref RenderingData renderingData)
+        {
+            //현재 렌더러(카메라) 정보를 가져옴
+            var renderer = renderingData.cameraData.renderer;
+            ConfigureTarget(renderer.cameraColorTargetHandle, renderer.cameraDepthTargetHandle);
+            //화면을 지우지 말고 그 위에 덧그려라
+            ConfigureClear(ClearFlag.None, Color.black);
+        }
     }
 
-    public OverlaySettings settings = new OverlaySettings();
+    public OverlaySettings overlaySettings = new OverlaySettings();
+    public NoOverlaySettings noOverlaySettings = new NoOverlaySettings();
     private OverlayPass overlayPass;
+    private NoOverlayPass noOverlayPass;
 
     public override void Create()
     {
-        if (settings.overlayMaterial == null) return;
-        overlayPass = new OverlayPass(settings);
+        //noOverlaySettings.layerMask = ~overlaySettings.layerMask;
+        
+        if (noOverlaySettings.eraserMaterial != null)
+            noOverlayPass = new NoOverlayPass(noOverlaySettings);
+        
+        if (overlaySettings.stencilColorMappings != null && overlaySettings.stencilColorMappings.Count != 0)
+            overlayPass = new OverlayPass(overlaySettings);
     }
 
     public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
     {
-        if (settings.overlayMaterial != null && overlayPass != null)
-        {
+        if (noOverlayPass != null)
+            renderer.EnqueuePass(noOverlayPass);
+
+
+        if (overlayPass != null)
             renderer.EnqueuePass(overlayPass);
+    }
+
+
+    public void SetOutlineColor(int index, Color color)
+    {
+        if (index >= 0 && index < overlaySettings.stencilColorMappings.Count)
+        {
+            overlaySettings.stencilColorMappings[index].outlineColor = color;
         }
     }
 }

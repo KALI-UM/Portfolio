@@ -2,9 +2,9 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Experimental.Rendering.Universal;
 
-public class VisibleChanger : MonoBehaviour
+
+public class CharacterVisualEffectController : MonoBehaviour
 {
     public List<SkinnedMeshRenderer> bodyParts = new();
 
@@ -16,6 +16,11 @@ public class VisibleChanger : MonoBehaviour
     
 
     [SerializeField] private float changeSpeed = 1.2f;
+    private ECharacter targetCharacterIndex;
+    private static readonly int StencilRefId = Shader.PropertyToID("_StencilRef");
+    private static readonly int OutlineStencilRefId = Shader.PropertyToID("_OutlineStencilRef");
+    private static readonly int[] CharacterStencilIds = { 99, 1, 2, 3, 4, 5, 6 };
+
 
     public bool IsTransparent
     {
@@ -47,58 +52,66 @@ public class VisibleChanger : MonoBehaviour
             }
         }
     }
-    
-    public IEnumerator SetTransparencyValueMax()
+
+    private void Awake()
     {
-        alpha = 0;
-        while (alpha < 1f)
-        {
-            alpha = Mathf.Clamp01(alpha += 0.05f);
-            foreach (var mat in bodyParts)
-            {
-                SetTransparentValue(mat, alpha);
-            }
-            yield return null;
-        }
-        
-        foreach (var mat in bodyParts)
-        {
-            SetTransparentValue(mat, 1f);
-        }
-        yield break;
+        SetTargetCharacter();
     }
 
-    public IEnumerator SetTransparencyValueMin(GameObject _character)
+    public void SetTargetCharacter()
     {
-        foreach (var mat in bodyParts)
+        targetCharacterIndex = ECharacter.U;
+
+        string charName = gameObject.name;
+        foreach (ECharacter character in System.Enum.GetValues(typeof(ECharacter)))
         {
-            SetTransparentMode(mat, true);
-        }
-        
-        alpha = 1;
-        while (alpha > 0f)
-        {
-            alpha -= 0.1f;
-            foreach (var mat in bodyParts)
+            if (charName.Contains(character.ToString()))
             {
-                SetTransparentValue(mat, alpha);
+                targetCharacterIndex = character;
+                break;
             }
-            yield return null;
         }
-        _character.SetActive(false);
-        yield break;
+
+        ApplyStencilReference();
     }
 
-    public void SetZeroTransparencyValue()
+    private void ApplyStencilReference()
     {
+        int characterIndex = (int)targetCharacterIndex;
+        if (characterIndex < 0 || characterIndex >= CharacterStencilIds.Length)
+            return;
+
+        int stencilReference = CharacterStencilIds[characterIndex];
+        foreach (var smr in bodyParts)
+        {
+            if (smr == null)
+                continue;
+
+            foreach (var material in smr.materials)
+            {
+                if (material == null)
+                    continue;
+
+                if (material.HasProperty(StencilRefId))
+                    material.SetInt(StencilRefId, stencilReference);
+
+                if (material.HasProperty(OutlineStencilRefId))
+                    material.SetInt(OutlineStencilRefId, stencilReference);
+            }
+        }
+    }
+
+    public void SetTransparencyValueInstant(float _value)
+    {
+        _value = Mathf.Clamp01(_value);
         foreach (var mat in bodyParts)
         {
-            SetTransparentMode(mat, true);
+            SetTransparentMode(mat, _value<0.999f);
         }
         
         foreach (var mat in bodyParts)
         {
-            SetTransparentValue(mat, 0);
+            SetTransparentValue(mat, _value);
         }
     }
 
@@ -139,32 +152,28 @@ public class VisibleChanger : MonoBehaviour
         }
 
         alpha = _targetAlpha;
-        foreach (var smr in bodyParts)
-        {
-            SetTransparentValue(smr, alpha);
-        }
+        SetTransparencyValueInstant(alpha);
     }
-    
-
-    
 
     [ContextMenu("Set Overlay Color")]
     public void SetOverlayColorInstant()
     {
+        IsOverlay = true;
         foreach (var smr in bodyParts)
         {
-            LilToonShaderHelper.SetOverlayColor(smr, overlayColor);
+            LilToonShaderHelper.SetOverlayColor(smr, (int)targetCharacterIndex,overlayColor);
         }
     }
     
     [ContextMenu("Set Default Color")]
     public void SetDefaultColorInstant()
     {
+        IsOverlay = false;
         Color defaultColor = overlayColor;
         defaultColor.a = 0f;
         foreach (var smr in bodyParts)
         {
-            LilToonShaderHelper.SetOverlayColor(smr, defaultColor);
+            LilToonShaderHelper.SetOverlayColor(smr, (int)targetCharacterIndex, defaultColor);
         }
     }
 
@@ -198,18 +207,14 @@ public class VisibleChanger : MonoBehaviour
             foreach (var smr in bodyParts)
             {
                 Color currentColor = Color.Lerp(prevColor, overlayColor, normalizedTime);
-                LilToonShaderHelper.SetOverlayColor(smr, currentColor);
+                LilToonShaderHelper.SetOverlayColor(smr, (int)targetCharacterIndex,currentColor);
             }
 
             yield return null;
         }
 
         //2025-12-11 KHJ : 정확한 값으로 보정
-        foreach (var smr in bodyParts)
-        {
-            LilToonShaderHelper.SetOverlayColor(smr, overlayColor);
-        }
-        //Debug.Log($"걸린 시간 {Time.time - startTime}");
+        SetOverlayColorInstant();
         yield break;
     }
 
@@ -232,21 +237,15 @@ public class VisibleChanger : MonoBehaviour
             foreach (var smr in bodyParts)
             {
                 Color currentColor = Color.Lerp(overlayColor, prevColor, normalizedTime);
-                LilToonShaderHelper.SetOverlayColor(smr, currentColor);
+                LilToonShaderHelper.SetOverlayColor(smr, (int)targetCharacterIndex,currentColor);
             }
 
             yield return null;
         }
 
         //2025-12-11 KHJ : 정확한 값으로 보정
-        Color defaultColor = overlayColor;
-        defaultColor.a = 0f;
-        foreach (var smr in bodyParts)
-        {
-            LilToonShaderHelper.SetOverlayColor(smr, defaultColor);
-        }
+        SetDefaultColorInstant();
 
-        //Debug.Log($"걸린 시간 {Time.time - startTime}");
         yield break;
     }
 
@@ -257,11 +256,8 @@ public class VisibleChanger : MonoBehaviour
         for (int i = 0; i < materials.Length; i++)
         {
             var mat = materials[i];
-
             LilToonShaderHelper.SetTransparentMode(mat, _on);
         }
-
-        _smr.materials = materials;
     }
 
     private void SetTransparentValue(SkinnedMeshRenderer _smr, float _value)
@@ -271,13 +267,15 @@ public class VisibleChanger : MonoBehaviour
         for (int i = 0; i < materials.Length; i++)
         {
             var mat = materials[i];
-
             LilToonShaderHelper.SetTranparentValue(mat, _value);
         }
 
         //2025-12-18 KHJ : 오버레이 올린채로 투명해지면 오버레이 부분이 남아버려 같이 투명화 해줌 
-        LilToonShaderHelper.SetOverlayAlpha(_smr, _value);
-        _smr.materials = materials;
+        LilToonShaderHelper.SetOverlayAlpha(_smr, (int)targetCharacterIndex,_value);
     }
 
+    private void OnDisable()
+    {
+        SetDefaultColorInstant();
+    }
 }

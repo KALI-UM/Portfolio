@@ -238,107 +238,33 @@ public static class LilToonShaderHelper
         }
     }
 
-    //2025-12-11 KHJ : 구버젼 오버레이 
-//     public static void SetOverlayColorMode(Material _mat, bool _on, bool _isEye = false)
-//     {
-//         if (_mat == null) return;
-//
-//         if (_on)
-//         {
-//             //2025-12-09 KHJ : 눈은 발광이 들어가 있어서 발광을 꺼줍니다 
-//             if (_isEye)
-//             {
-//                 if (_mat.HasProperty(ID_UseEmission))
-//                 {
-//                     _mat.SetFloat(ID_UseEmission, 0f);
-//                     _mat.DisableKeyword(KW_EMISSION);
-//                 }
-//
-//                 if (_mat.HasProperty(ID_UseEmission2nd))
-//                 {
-//                     _mat.SetFloat(ID_UseEmission2nd, 0f);
-//                     _mat.DisableKeyword(KW_GEOM_TYPE_BRANCH);
-//                 }
-//             }
-//             else
-//             {
-//                 if (_mat.HasProperty(ID_RimLight))
-//                 {
-//                     _mat.SetFloat(ID_RimLight, 0f);
-//                     _mat.DisableKeyword(KW_METALLICGLOSSMAP);
-//                 }
-//
-//                 if (_mat.HasProperty(ID_UseMatCap))
-//                 {
-//                     _mat.SetFloat(ID_UseMatCap, 0f);
-//                     _mat.DisableKeyword(KW_SMOOTHNESS_TEXTURE_ALBEDO_CHANNEL_A);
-//                 }
-//
-//                 //2025-12-05 KHJ : 아웃라인의 하이라이트 부분을 투명도 0으로 만들어서 단순하게 아웃라인 컬러로 그리도록 함 
-//                 if (_mat.HasProperty(ID_OutlineLitColor))
-//                 {
-//                     Color c = _mat.GetColor(ID_OutlineLitColor);
-//                     c.a = 0f;
-//                     _mat.SetColor(ID_OutlineLitColor, c);
-//                 }
-//             }
-//         }
-//         else
-//         {
-//             if (_isEye)
-//             {
-//                 if (_mat.HasProperty(ID_UseEmission) && _mat.GetTexture(ID_EmissionMap) != null)
-//                 {
-//                     _mat.SetFloat(ID_UseEmission, 1f);
-//                     _mat.EnableKeyword(KW_EMISSION);
-//                 }
-//
-//                 if (_mat.HasProperty(ID_UseEmission2nd) && _mat.GetTexture(ID_Emission2ndMap) != null)
-//                 {
-//                     _mat.SetFloat(ID_UseEmission2nd, 1f);
-//                     _mat.EnableKeyword(KW_GEOM_TYPE_BRANCH);
-//                 }
-//             }
-//             else
-//             {
-//                 if (_mat.HasProperty(ID_RimLight))
-//                 {
-//                     _mat.SetFloat(ID_RimLight, 1f);
-//                     _mat.EnableKeyword(KW_METALLICGLOSSMAP);
-//                 }
-//
-//                 if (_mat.HasProperty(ID_UseMatCap))
-//                 {
-//                     _mat.SetFloat(ID_UseMatCap, 1f);
-//                     _mat.EnableKeyword(KW_SMOOTHNESS_TEXTURE_ALBEDO_CHANNEL_A);
-//                 }
-//
-//                 if (_mat.HasProperty(ID_OutlineLitColor))
-//                 {
-//                     Color c = _mat.GetColor(ID_OutlineLitColor);
-//                     _mat.SetColor(ID_OutlineLitColor, c);
-//                 }
-//             }
-//         }
-//
-//
-// #if UNITY_EDITOR
-//         UnityEditor.EditorUtility.SetDirty(_mat);
-// #endif
-//     }
-
-    public static void SetOverlayColor(SkinnedMeshRenderer _smr, Color _color)
+    public static void SetOverlayColor(SkinnedMeshRenderer _smr, int _index, Color _color)
     {
         MaterialPropertyBlock newPropertyBlock = new MaterialPropertyBlock();
         _smr.GetPropertyBlock(newPropertyBlock);
-        
-        //2025-12-11 KHJ : 오버레이 쉐이더만 이 프로퍼티를 가지고 있도록 해야 해당 기능 정상 작동  
+
+        //2025-12-11 KHJ : 오버레이 쉐이더만 이 프로퍼티를 가지고 있도록 해야 해당 기능 정상 작동
         newPropertyBlock.SetColor(ID_OverlayColor, _color);
+        
+        
+        var renderer = (GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset).GetRenderer(0);
+        var property = typeof(ScriptableRenderer).GetProperty("rendererFeatures", BindingFlags.NonPublic | BindingFlags.Instance);
+
+        List<ScriptableRendererFeature> features = property.GetValue(renderer) as List<ScriptableRendererFeature>;
+
+        foreach (var feature in features)
+        {
+            if (feature.GetType() == typeof(OverlayEffectRenderFeature))
+            {
+                var l = (feature as OverlayEffectRenderFeature);
+                l.SetOutlineColor(_index, _color);
+            }
+        }
 
         _smr.SetPropertyBlock(newPropertyBlock);
     }
 
-    public static void SetOverlayAlpha(SkinnedMeshRenderer _smr, float alpha)
+    public static void SetOverlayAlpha(SkinnedMeshRenderer _smr,int _index,  float alpha)
     {
         MaterialPropertyBlock newPropertyBlock = new MaterialPropertyBlock();
         _smr.GetPropertyBlock(newPropertyBlock);
@@ -346,7 +272,22 @@ public static class LilToonShaderHelper
         //2025-12-11 KHJ : 오버레이 쉐이더만 이 프로퍼티를 가지고 있도록 해야 해당 기능 정상 작동  
         Color originColor = newPropertyBlock.GetColor(ID_OverlayColor);
         originColor.a = Mathf.Min(originColor.a, alpha);
+        
         newPropertyBlock.SetColor(ID_OverlayColor, originColor);
+        
+        var renderer = (GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset).GetRenderer(0);
+        var property = typeof(ScriptableRenderer).GetProperty("rendererFeatures", BindingFlags.NonPublic | BindingFlags.Instance);
+
+        List<ScriptableRendererFeature> features = property.GetValue(renderer) as List<ScriptableRendererFeature>;
+
+        foreach (var feature in features)
+        {
+            if (feature.GetType() == typeof(OverlayEffectRenderFeature))
+            {
+                var l = (feature as OverlayEffectRenderFeature);
+                l.SetOutlineColor(_index, originColor);
+            }
+        }
 
         _smr.SetPropertyBlock(newPropertyBlock);
     }
